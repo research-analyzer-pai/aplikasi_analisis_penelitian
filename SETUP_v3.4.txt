@@ -1,0 +1,16 @@
+RESEARCH ANALYZER PROFESSIONAL v3.4 — QUICK START
+
+1. Extract this ZIP.
+2. Open terminal in the extracted folder.
+3. Run: pip install -r requirements.txt
+4. Run: streamlit run app.py
+5. Open the local Streamlit URL.
+
+New tabs:
+- Advanced Qualitative: codebook, transcript chunks, theme evidence, coding audit, triangulation overview.
+- Journal Readiness: manuscript checklist, abstract/keyword checks, reference DOI indicator, outline download.
+
+AI:
+Open AI Research Studio, provide an API key, and explicitly run a task. API use may incur charges; submitted text is sent to the configured provider. Anonymize interview data and do not submit confidential material without authorization.
+
+The application is a research-support prototype. Verify all statistics, quotations, references, interpretations, and journal requirements before publication.

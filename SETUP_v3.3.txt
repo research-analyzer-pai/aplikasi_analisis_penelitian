@@ -1,0 +1,20 @@
+RESEARCH ANALYZER PROFESSIONAL v3.3 — QUICK START
+
+1. Extract Research_Analyzer_Professional_v3.3.zip.
+2. Open terminal in the extracted Research_Analyzer_Professional_v3.3 folder.
+3. Install packages:
+   pip install -r requirements.txt
+4. Start the application:
+   streamlit run app.py
+5. Open the local Streamlit address shown in the terminal.
+6. Open "Systematic Review & PRISMA" to import RIS, BibTeX, or CSV records.
+7. Review duplicates, complete screening decisions, and export the review matrix and PRISMA-style flow.
+
+AI usage:
+- Open "AI Research Studio" or manuscript tools.
+- Supply an API key and select an available model.
+- API requests may incur charges; text is transmitted to the API provider.
+- Do not submit identifiable participant data or confidential documents without authorization.
+
+Methodological note:
+This is a research-support prototype. Verify metadata, duplicates, screening decisions, PRISMA counts, all AI outputs, and references. It does not replace a registered protocol, systematic database searches, dual independent screening, risk-of-bias assessment, or PRISMA 2020 reporting guidance.

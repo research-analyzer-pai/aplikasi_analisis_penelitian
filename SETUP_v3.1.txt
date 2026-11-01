@@ -1,0 +1,20 @@
+RESEARCH ANALYZER PROFESSIONAL v3.1 — QUICK START
+
+1. Extract the ZIP file.
+2. Open a terminal in the extracted folder.
+3. Install dependencies:
+   pip install -r requirements.txt
+4. Run:
+   streamlit run app.py
+5. Open the local URL shown by Streamlit.
+6. Open the tab "AI Research Studio".
+7. Enter an API key that is enabled for API usage, select a model available to your account, provide research material, and press "Jalankan analisis AI".
+
+IMPORTANT
+- API usage may incur charges.
+- Text submitted in AI Research Studio is sent to the external API provider.
+- Do not submit identifiable participant data or confidential content without authorization.
+- Use only anonymized transcripts and permitted documents.
+- Check all AI-generated claims and quotations against original sources.
+- The AI features are advisory and do not replace expert review, ethical approval, or methodological validation.
+- For long PDFs, split the text into smaller sections; maximum input size is 60,000 characters per request.
