@@ -1,0 +1,3 @@
+path,beta,t_value,p_value
+SelfLeadership -> SchoolClimate,0.52,4.31,0.0001
+SchoolClimate -> InclusiveCharacter,0.34,2.88,0.004
