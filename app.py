@@ -8,7 +8,6 @@ from qualitative_case_engine_v49 import informant_theme_matrix, cross_case_theme
 from mixed_methods_integration_v48 import build_evidence_linked_joint_display, integration_audit, summarize_integration_by_path, export_integration_narrative
 from pls_indicator_predict_v46 import indicator_level_pls_predict
 import os
-from pathlib import Path
 import json
 import pandas as pd
 import numpy as np
@@ -32,24 +31,8 @@ import sem_inference_v42 as si42
 import cfa_cbsem_v43 as cfa43
 import cbsem_advanced_v44 as cb44
 
-st.set_page_config(page_title="Research Analyzer Professional Web v6.0", page_icon="🔬", layout="wide")
-# Optional shared-password gate for a small private deployment.
-# Set RA_WEB_PASSWORD in the hosting environment; do not hard-code credentials.
-_web_password = os.environ.get("RA_WEB_PASSWORD", "")
-if _web_password:
-    if not st.session_state.get("_ra_authenticated", False):
-        st.title("Research Analyzer Professional")
-        _candidate = st.text_input("Kata sandi akses", type="password")
-        if st.button("Masuk"):
-            if _candidate == _web_password:
-                st.session_state["_ra_authenticated"] = True
-                st.rerun()
-            else:
-                st.error("Kata sandi tidak sesuai.")
-        st.stop()
-
-st.title("Research Analyzer Professional Web v6.0")
-st.caption("Integrated Research Workspace • Quantitative • Qualitative • Mixed Methods • Academic Writing")
+st.set_page_config(page_title="Research Analyzer Professional v5.0",layout="wide")
+st.title("Research Analyzer Professional v5.0")
 st.caption("Statistical Analysis • Qualitative Intelligence • Mixed Methods • Crossref • Publication Readiness • Advanced Diagnostics")
 st.info("v2.7 menambahkan analisis mediasi dan moderasi berbasis skor konstruk terestimasi. Baca catatan metodologis: fitur ini merupakan analisis OLS/bootstrap eksploratif, bukan bukti kausal otomatis.")
 
@@ -68,7 +51,7 @@ with st.sidebar:
         "Mixed methods sequential exploratory","Mixed methods convergent","Studi kasus","Lainnya"])
     alpha=st.number_input("Ambang signifikansi",0.001,0.20,0.05,0.005)
 
-tabs=st.tabs(["Dashboard","Data","Reliabilitas","Uji Statistik","Regresi OLS","Kualitatif","PLS-SEM Prototype","SEM-PLS Import","Mixed Methods","Research Intelligence","Literature & Instrument","AI Research Studio","Research Intelligence 3.2","Systematic Review & PRISMA","Advanced Qualitative","Journal Readiness","Laporan","AI Qualitative & Joint Display v3.5","SEM Results Validation v3.7","Evidence-linked Joint Display v3.7","Crossref Metadata Intelligence v4.0","Journal Submission Assistant v4.0","Advanced Research Diagnostics v4.1","SEM Inference & Diagnostics v4.2","CFA & CB-SEM Engine v4.3","Advanced CB-SEM & HOC v4.4","Workspace & Project","Developer Studio"])
+tabs=st.tabs(["Dashboard","Data","Reliabilitas","Uji Statistik","Regresi OLS","Kualitatif","PLS-SEM Prototype","SEM-PLS Import","Mixed Methods","Research Intelligence","Literature & Instrument","AI Research Studio","Research Intelligence 3.2","Systematic Review & PRISMA","Advanced Qualitative","Journal Readiness","Laporan","AI Qualitative & Joint Display v3.5","SEM Results Validation v3.7","Evidence-linked Joint Display v3.7","Crossref Metadata Intelligence v4.0","Journal Submission Assistant v4.0","Advanced Research Diagnostics v4.1","SEM Inference & Diagnostics v4.2","CFA & CB-SEM Engine v4.3","Advanced CB-SEM & HOC v4.4"])
 with tabs[0]:
     a,b,c,d=st.columns(4)
     a.metric("Responden",len(st.session_state.data))
@@ -1387,82 +1370,3 @@ with st.expander("v5.0 — Automatic Academic Report (Word)", expanded=False):
             with open(path,"rb") as fh: st.download_button("Unduh laporan Bab IV–V (DOCX)",fh.read(),"Research_Analyzer_Report_v50.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document")
             os.unlink(path)
         except Exception as e: st.error(str(e))
-
-
-# ---------------------------------------------------------------------------
-# WEB v6.0: portable project workspace and extensibility
-# ---------------------------------------------------------------------------
-from web_workspace import create_project_bundle, read_project_bundle, discover_extensions
-
-with tabs[26]:
-    st.subheader("Workspace & Manajemen Proyek")
-    st.write("Simpan data kerja penelitian menjadi satu paket proyek yang dapat dipindahkan, diarsipkan, dan dibuka kembali.")
-    project_meta = {
-        "title": project,
-        "researcher": researcher,
-        "design": design,
-        "alpha": float(alpha),
-        "application_version": "6.0"
-    }
-    frames_to_save = {
-        "quantitative_data": st.session_state.get("data"),
-        "qualitative_segments": st.session_state.get("segments"),
-        "qualitative_codes": st.session_state.get("codes"),
-        "sem_results": st.session_state.get("sem"),
-    }
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Siapkan paket proyek (.zip)", key="v60_export_project"):
-            try:
-                bundle = create_project_bundle(project_meta, frames_to_save,
-                    notes={"notice": "Anonimkan data sebelum dibagikan."})
-                st.session_state["_v60_project_bundle"] = bundle
-                st.success("Paket proyek berhasil disiapkan.")
-            except Exception as exc:
-                st.error(f"Gagal membuat paket proyek: {exc}")
-        if "_v60_project_bundle" in st.session_state:
-            st.download_button("Unduh paket proyek", st.session_state["_v60_project_bundle"],
-                file_name="research_project_v6.zip", mime="application/zip")
-    with c2:
-        uploaded_project = st.file_uploader("Buka paket proyek (.zip)", type=["zip"], key="v60_import_project")
-        if uploaded_project and st.button("Validasi dan muat proyek", key="v60_load_project"):
-            try:
-                manifest, restored = read_project_bundle(uploaded_project.getvalue())
-                mapping = {
-                    "quantitative_data": "data",
-                    "qualitative_segments": "segments",
-                    "qualitative_codes": "codes",
-                    "sem_results": "sem"
-                }
-                for dataset_name, state_name in mapping.items():
-                    if dataset_name in restored:
-                        st.session_state[state_name] = restored[dataset_name]
-                st.session_state["_v60_loaded_manifest"] = manifest
-                st.success("Dataset proyek dimuat ke sesi aktif. Periksa kembali variabel sebelum analisis.")
-                st.json(manifest.get("metadata", {}))
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Paket proyek tidak dapat dibuka: {exc}")
-    st.warning("Paket proyek menyimpan dataset yang sedang berada di memori sesi. File sumber, kredensial, dan hasil unduhan yang tidak dimasukkan secara eksplisit tidak ikut disimpan.")
-    st.caption("Untuk penggunaan multi-pengguna permanen, tahap berikutnya memerlukan database, manajemen akun individual, backup, dan kontrol akses berbasis peran.")
-
-with tabs[27]:
-    st.subheader("Developer Studio — fasilitas pengembangan")
-    st.write("Arsitektur modular disiapkan agar pengembang dapat menambahkan analisis baru tanpa menimpa modul inti.")
-    st.markdown("""
-    **Struktur pengembangan**
-    - `app.py` — antarmuka utama Streamlit.
-    - `*_vXX.py` — modul analisis dengan versi terpisah.
-    - `extensions/` — ruang pengembangan modul tambahan.
-    - `tests/` — pengujian otomatis.
-    - `docs/` — dokumentasi metodologi dan batasan.
-    """)
-    ext_list = discover_extensions("extensions")
-    st.dataframe(pd.DataFrame(ext_list) if ext_list else pd.DataFrame(columns=["name","file","bytes"]),
-                 use_container_width=True)
-    st.info("Extension hanya dideteksi, tidak dieksekusi otomatis. Integrasi harus melalui peninjauan kode dan pengujian untuk mencegah eksekusi kode yang tidak tepercaya.")
-    st.markdown("**Siklus penambahan fitur**")
-    st.code("1. Buat extensions/nama_modul.py\n2. Tambahkan validasi input dan dokumentasi\n3. Buat tests/test_nama_modul.py\n4. Jalankan: python -m unittest discover -s tests -v\n5. Integrasikan secara eksplisit ke app.py\n6. Uji kembali sebelum deployment", language="text")
-    st.download_button("Unduh template extension",
-        (Path("extensions/example_extension.py").read_bytes()),
-        file_name="example_extension.py", mime="text/x-python")
