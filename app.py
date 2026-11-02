@@ -9,6 +9,7 @@ from mixed_methods_integration_v48 import build_evidence_linked_joint_display, i
 from pls_indicator_predict_v46 import indicator_level_pls_predict
 import os
 import json
+import hashlib
 import pandas as pd
 import numpy as np
 from io import BytesIO
@@ -31,10 +32,13 @@ import sem_inference_v42 as si42
 import cfa_cbsem_v43 as cfa43
 import cbsem_advanced_v44 as cb44
 from input_ingestion import read_tabular, excel_sheet_names, extract_qualitative_text, extension_of
+from project_repository import get_engine, init_repository, load_project, save_project, list_projects, database_mode
+from article_writer_v60 import count_words, make_chart, make_flow_diagram, build_article_docx, build_markdown_article_docx, crossref_search
+from auto_article_v60 import search_openalex_literature, apa_from_openalex, generate_full_article
 
-st.set_page_config(page_title="Research Analyzer Professional v5.1",layout="wide")
-st.title("Research Analyzer Professional v5.2")
-st.caption("Unified Research Data Management • Single Data Entry • Quantitative • Qualitative • Mixed Methods • Publication Readiness")
+st.set_page_config(page_title="Research Analyzer Professional v6.0",layout="wide")
+st.title("Research Analyzer Professional v6.0")
+st.caption("One Project • Persistent Data Repository • Quantitative • Qualitative • Mixed Methods • Publication Readiness")
 st.info("v2.7 menambahkan analisis mediasi dan moderasi berbasis skor konstruk terestimasi. Baca catatan metodologis: fitur ini merupakan analisis OLS/bootstrap eksploratif, bukan bukti kausal otomatis.")
 
 def init(k,v):
@@ -56,7 +60,41 @@ with st.sidebar:
         "Mixed methods sequential exploratory","Mixed methods convergent","Studi kasus","Lainnya"])
     alpha=st.number_input("Ambang signifikansi",0.001,0.20,0.05,0.005)
 
-tabs=st.tabs(["Dashboard","Data","Reliabilitas","Uji Statistik","Regresi OLS","Kualitatif","PLS-SEM Prototype","SEM-PLS Import","Mixed Methods","Research Intelligence","Literature & Instrument","AI Research Studio","Research Intelligence 3.2","Systematic Review & PRISMA","Advanced Qualitative","Journal Readiness","Laporan","AI Qualitative & Joint Display v3.5","SEM Results Validation v3.7","Evidence-linked Joint Display v3.7","Crossref Metadata Intelligence v4.0","Journal Submission Assistant v4.0","Advanced Research Diagnostics v4.1","SEM Inference & Diagnostics v4.2","CFA & CB-SEM Engine v4.3","Advanced CB-SEM & HOC v4.4"])
+# Persistent project repository: PostgreSQL is recommended for cloud deployment.
+try:
+    _repo_engine = get_engine()
+    init_repository(_repo_engine)
+    _repo_ready = True
+    _repo_mode = database_mode(_repo_engine)
+except Exception as _repo_error:
+    _repo_engine = None
+    _repo_ready = False
+    _repo_mode = "Session only (database connection unavailable)"
+    st.sidebar.warning(f"Repositori permanen belum aktif: {_repo_error}")
+
+_project_id = hashlib.sha256(project.strip().lower().encode("utf-8")).hexdigest()[:24]
+if st.session_state.get("_active_project_id") != _project_id:
+    _loaded = load_project(_repo_engine, _project_id) if _repo_ready else None
+    if _loaded:
+        for _key, _value in _loaded.items():
+            st.session_state[_key] = _value
+        st.sidebar.success("Data proyek berhasil dimuat.")
+    else:
+        st.session_state["data"] = pd.DataFrame()
+        st.session_state["segments"] = pd.DataFrame(columns=["id","source","participant","text"])
+        st.session_state["codes"] = pd.DataFrame(columns=["segment_id","code","category","theme","memo","evidence_type"])
+        st.session_state["sem"] = pd.DataFrame()
+        st.session_state["joint"] = []
+        st.session_state["data_sources"] = []
+        st.session_state["ingested_hashes"] = set()
+        st.session_state["project_files"] = {}
+        st.session_state["tabular_datasets"] = {}
+    st.session_state["_active_project_id"] = _project_id
+st.sidebar.caption(f"Repositori: {_repo_mode}")
+if _repo_ready and _repo_engine.dialect.name == "sqlite":
+    st.sidebar.warning("SQLite cocok untuk penggunaan lokal. Untuk penyimpanan permanen di Streamlit Cloud, hubungkan PostgreSQL melalui DATABASE_URL.")
+
+tabs=st.tabs(["Dashboard","Data","Reliabilitas","Uji Statistik","Regresi OLS","Kualitatif","PLS-SEM Prototype","SEM-PLS Import","Mixed Methods","Research Intelligence","Literature & Instrument","AI Research Studio","Research Intelligence 3.2","Systematic Review & PRISMA","Advanced Qualitative","Journal Readiness","Laporan","AI Qualitative & Joint Display v3.5","SEM Results Validation v3.7","Evidence-linked Joint Display v3.7","Crossref Metadata Intelligence v4.0","Journal Submission Assistant v4.0","Advanced Research Diagnostics v4.1","SEM Inference & Diagnostics v4.2","CFA & CB-SEM Engine v4.3","Advanced CB-SEM & HOC v4.4","Artikel Ilmiah (IMRaD)","AI Article Generator (Automatic)"])
 with tabs[0]:
     a,b,c,d=st.columns(4)
     a.metric("Responden",len(st.session_state.data))
@@ -1449,3 +1487,253 @@ with st.expander("v5.0 — Automatic Academic Report (Word)", expanded=False):
             with open(path,"rb") as fh: st.download_button("Unduh laporan Bab IV–V (DOCX)",fh.read(),"Research_Analyzer_Report_v50.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document")
             os.unlink(path)
         except Exception as e: st.error(str(e))
+
+
+# Autosave core project data on every rerun. Parsed datasets, qualitative evidence,
+# coding, imported SEM data, and source metadata are persisted per project.
+if _repo_ready:
+    try:
+        save_project(_repo_engine, _project_id, project.strip() or "Penelitian tanpa judul", {
+            "data": st.session_state.get("data", pd.DataFrame()),
+            "tabular_datasets": st.session_state.get("tabular_datasets", {}),
+            "segments": st.session_state.get("segments", pd.DataFrame()),
+            "codes": st.session_state.get("codes", pd.DataFrame()),
+            "sem": st.session_state.get("sem", pd.DataFrame()),
+            "data_sources": st.session_state.get("data_sources", []),
+            "ingested_hashes": st.session_state.get("ingested_hashes", set()),
+            "joint": st.session_state.get("joint", []),
+        })
+        st.sidebar.caption("Autosave proyek aktif.")
+    except Exception as _save_error:
+        st.sidebar.error(f"Gagal menyimpan proyek: {_save_error}")
+
+
+
+with tabs[26]:
+    st.subheader("Penyusun Artikel Ilmiah Lengkap — Maksimal 8.000 Kata")
+    st.caption("Struktur IMRaD lengkap, daftar pustaka APA 7, dan pilihan visual. Artikel disusun dari data dan narasi yang dimasukkan peneliti; sistem tidak mengarang hasil atau referensi.")
+    st.info("Batas 8.000 kata berlaku untuk abstrak dan isi utama, tidak termasuk daftar referensi.")
+    art_title=st.text_input("Judul artikel",key="art_title_v60")
+    art_authors=st.text_input("Nama author (pisahkan dengan koma)",key="art_authors_v60")
+    art_affiliation=st.text_input("Afiliasi institusi",key="art_affiliation_v60")
+    art_email=st.text_input("Email corresponding author",key="art_email_v60")
+    art_abstract=st.text_area("Abstrak",height=160,key="art_abstract_v60")
+    art_keywords=st.text_input("Kata kunci",key="art_keywords_v60")
+    st.markdown("### Isi artikel")
+    prompts={
+      "introduction":("Introduction","Latar belakang, gap penelitian, state of the art, teori, kebaruan, tujuan/pertanyaan."),
+      "method":("Research Method","Desain, lokasi/waktu, partisipan/sampel, instrumen/sumber data, prosedur, analisis, validitas/keabsahan, etik."),
+      "results":("Results","Temuan faktual: statistik dan ukuran efek; tema dan kutipan anonim; atau hasil setiap fase dan integrasi mixed methods."),
+      "discussion":("Discussion","Interpretasi, perbandingan studi terdahulu, kontribusi teoretis/praktis, implikasi, keterbatasan."),
+      "conclusion":("Conclusion","Jawaban tujuan penelitian, kesimpulan utama, implikasi, keterbatasan inti, rekomendasi.")
+    }
+    art_sections={}
+    for key,(heading,hint) in prompts.items():
+        art_sections[key]=st.text_area(heading,height=210 if key in ["introduction","results","discussion"] else 160,
+                                       key=f"art_{key}_v60",placeholder=hint)
+    art_ack=st.text_area("Acknowledgements (opsional)",key="art_ack_v60")
+    main_words=count_words(art_abstract+"\n"+"\n".join(art_sections.values()))
+    st.metric("Jumlah kata abstrak + isi utama",f"{main_words:,} / 8.000")
+    if main_words>8000: st.error("Naskah melebihi batas 8.000 kata.")
+
+    st.markdown("### Referensi dan sitasi APA edisi ke-7")
+    with st.expander("Pencarian metadata referensi melalui Crossref (opsional)"):
+        cr_query=st.text_input("Topik, judul artikel, atau kata kunci akademik",key="art_crossref_query_v60")
+        if st.button("Cari metadata referensi",key="art_crossref_search_v60"):
+            try:
+                st.session_state["art_crossref_results_v60"]=crossref_search(cr_query,8)
+            except Exception as e:
+                st.error(f"Pencarian Crossref gagal: {e}")
+        cr_results=st.session_state.get("art_crossref_results_v60",[])
+        if cr_results:
+            options=[f"{x['year']} | {x['title'][:100]} | {x['journal']}" for x in cr_results]
+            selected=st.multiselect("Pilih metadata yang akan ditambahkan ke daftar referensi",options,key="art_crossref_selected_v60")
+            if st.button("Tambahkan referensi terpilih",key="art_crossref_add_v60"):
+                chosen=[cr_results[options.index(x)]["apa"] for x in selected]
+                current=st.session_state.get("art_refs_v60","")
+                st.session_state["art_refs_v60"]=(current.rstrip()+"\\n\\n" if current.strip() else "")+"\\n\\n".join(chosen)
+                st.rerun()
+            st.caption("Crossref menyediakan metadata bibliografis, bukan penilaian kualitas jurnal. Verifikasi artikel, status publikasi, relevansi, dan DOI pada laman penerbit.")
+    art_refs=st.text_area("Daftar referensi APA 7 (satu referensi per paragraf)",height=200,key="art_refs_v60",
+      placeholder="Author, A. A. (Year). Title of article. Journal, volume(issue), pages. https://doi.org/...")
+    st.caption("Gunakan sumber yang benar-benar telah dibaca dan diverifikasi. Pastikan seluruh sitasi dalam teks tercantum di daftar referensi, dan sebaliknya. Panduan APA: https://apastyle.apa.org/style-grammar-guidelines/references/examples")
+
+    st.markdown("### Pilihan tabel, grafik, gambar, dan diagram")
+    visual_modes=st.multiselect("Pilih elemen yang akan dimasukkan",["Tabel dataset aktif","Grafik dataset aktif","Diagram alur penelitian","Gambar/foto unggahan"],key="art_visual_modes_v60")
+    tables=[]; figures=[]
+    vdf=st.session_state.get("data",pd.DataFrame())
+    if "Tabel dataset aktif" in visual_modes:
+        if not vdf.empty:
+            cols=st.multiselect("Kolom tabel",vdf.columns.tolist(),default=vdf.columns.tolist()[:min(6,len(vdf.columns))],key="art_table_cols_v60")
+            nrows=st.slider("Jumlah baris maksimum",1,min(50,max(1,len(vdf))),min(15,max(1,len(vdf))),key="art_table_rows_v60")
+            if cols:
+                st.dataframe(vdf[cols].head(nrows),use_container_width=True)
+                tables.append(("Table 1. Research dataset",vdf[cols].head(nrows)))
+        else: st.warning("Unggah dataset tabular pada tab Data terlebih dahulu.")
+    if "Grafik dataset aktif" in visual_modes:
+        nums=vdf.select_dtypes(include=np.number).columns.tolist() if not vdf.empty else []
+        if nums:
+            typ=st.selectbox("Jenis grafik",["Bar","Line","Scatter","Histogram"],key="art_chart_type_v60")
+            xcol=st.selectbox("Kolom X/kategori",vdf.columns.tolist(),key="art_chart_x_v60")
+            ycols=st.multiselect("Variabel Y",nums,default=nums[:1],key="art_chart_y_v60")
+            ttl=st.text_input("Judul grafik",key="art_chart_title_v60")
+            if st.button("Buat grafik",key="art_chart_make_v60"):
+                try: st.session_state["art_chart_bytes_v60"]=make_chart(vdf,typ,xcol,ycols,ttl).getvalue()
+                except Exception as e: st.error(str(e))
+            if st.session_state.get("art_chart_bytes_v60"):
+                st.image(st.session_state["art_chart_bytes_v60"])
+                from io import BytesIO
+                figures.append(("Figure 1. "+(ttl or "Research data visualization"),BytesIO(st.session_state["art_chart_bytes_v60"])))
+        else: st.warning("Grafik memerlukan variabel numerik.")
+    if "Diagram alur penelitian" in visual_modes:
+        steps=st.text_area("Tahapan diagram (satu per baris)",key="art_flow_steps_v60",
+                           placeholder="Pengumpulan data\nAnalisis kuantitatif\nAnalisis kualitatif\nIntegrasi\nKesimpulan")
+        if st.button("Buat diagram",key="art_flow_make_v60"):
+            try: st.session_state["art_flow_bytes_v60"]=make_flow_diagram(steps.splitlines()).getvalue()
+            except Exception as e: st.error(str(e))
+        if st.session_state.get("art_flow_bytes_v60"):
+            st.image(st.session_state["art_flow_bytes_v60"])
+            from io import BytesIO
+            figures.append(("Figure 2. Research process diagram",BytesIO(st.session_state["art_flow_bytes_v60"])))
+    if "Gambar/foto unggahan" in visual_modes:
+        from io import BytesIO
+        img=st.file_uploader("Unggah gambar PNG/JPG",type=["png","jpg","jpeg"],key="art_image_v60")
+        cap=st.text_input("Keterangan gambar",key="art_image_caption_v60")
+        if img:
+            st.image(img,caption=cap)
+            figures.append((cap or "Research documentation",BytesIO(img.getvalue())))
+
+    if st.button("Ekspor artikel lengkap ke Word (DOCX)",type="primary",key="art_export_v60"):
+        try:
+            if not art_title.strip() or not art_authors.strip() or not art_abstract.strip():
+                raise ValueError("Judul, nama author, dan abstrak wajib diisi.")
+            if main_words>8000: raise ValueError("Jumlah kata melebihi 8.000.")
+            if not art_refs.strip(): raise ValueError("Daftar referensi wajib diisi; sistem tidak membuat referensi fiktif.")
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".docx",delete=False) as tmp: outpath=tmp.name
+            build_article_docx(outpath,{"title":art_title,"authors":art_authors,"affiliation":art_affiliation,"email":art_email},
+                art_sections,art_refs,art_keywords,tables,figures,art_abstract,art_ack)
+            with open(outpath,"rb") as fh:
+                st.download_button("Unduh artikel ilmiah (DOCX)",fh.read(),"Research_Article_APA7.docx",
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            os.unlink(outpath)
+            st.success("Artikel berhasil disusun. Periksa kembali kecocokan dengan pedoman jurnal tujuan sebelum submit.")
+        except Exception as e: st.error(f"Gagal menyusun artikel: {e}")
+
+
+
+with tabs[27]:
+    st.subheader("AI Automatic International Journal Article Generator")
+    st.caption("Menyusun draf artikel lengkap tanpa mengunggah dokumen. AI menggunakan informasi penelitian yang Anda masukkan, data yang sudah tersimpan pada proyek aktif (opsional), dan penelusuran literatur akademik OpenAlex.")
+    st.warning("Diperlukan OpenAI API key dan koneksi internet. Penggunaan API dapat dikenai biaya. Jangan masukkan data identitas atau informasi sensitif responden. Artikel adalah draf akademik untuk verifikasi peneliti, bukan jaminan diterima jurnal.")
+    ai_key=st.text_input("OpenAI API key",type="password",key="auto_article_api_key_v60",
+                         help="API key tidak disimpan dalam file proyek. Masukkan di sesi aplikasi.")
+    models=st.session_state.get("v31_available_models",[])
+    default_model="gpt-5.5"
+    if models:
+        default_model=next((x for x in models if x.startswith("gpt-5")),models[0])
+        ai_model=st.selectbox("Model AI",models,index=models.index(default_model),key="auto_article_model_v60")
+    else:
+        ai_model=st.text_input("Model API",value=default_model,key="auto_article_model_v60")
+    st.markdown("### A. Identitas dan rancangan penelitian")
+    ac1,ac2=st.columns(2)
+    with ac1:
+        ai_title=st.text_input("Judul/topik penelitian",key="auto_article_title_v60")
+        ai_authors=st.text_input("Nama author",key="auto_article_authors_v60")
+        ai_affil=st.text_input("Afiliasi institusi",key="auto_article_affil_v60")
+        ai_email=st.text_input("Email corresponding author (opsional)",key="auto_article_email_v60")
+        ai_language=st.selectbox("Bahasa artikel",["Academic English","Bahasa Indonesia"],key="auto_article_language_v60")
+    with ac2:
+        ai_approach=st.selectbox("Pendekatan",["Quantitative","Qualitative","Mixed methods"],key="auto_article_approach_v60")
+        ai_design=st.selectbox("Desain penelitian",["Cross-sectional survey","Experimental/quasi-experimental","Correlational/predictive","Case study","Phenomenology","Ethnography","Grounded theory","Sequential explanatory","Sequential exploratory","Convergent parallel","Other / specify"],key="auto_article_design_v60")
+        ai_context=st.text_input("Lokasi/konteks penelitian",key="auto_article_context_v60")
+        ai_period=st.text_input("Waktu/durasi penelitian",key="auto_article_period_v60")
+        ai_word_limit=st.slider("Batas kata artikel (di luar referensi)",3000,8000,8000,500,key="auto_article_wordlimit_v60")
+    ai_problem=st.text_area("Masalah penelitian dan urgensi",height=100,key="auto_article_problem_v60")
+    ai_questions=st.text_area("Tujuan/pertanyaan penelitian",height=90,key="auto_article_questions_v60")
+    ai_theory=st.text_area("Teori/konsep utama yang digunakan (opsional)",height=90,key="auto_article_theory_v60")
+    ai_population=st.text_area("Populasi, sampel, informan, dan teknik pemilihan",height=90,key="auto_article_population_v60")
+    ai_instruments=st.text_area("Instrumen dan sumber data",height=90,key="auto_article_instruments_v60")
+    ai_procedure=st.text_area("Prosedur pengumpulan data dan etika penelitian",height=90,key="auto_article_procedure_v60")
+    ai_analysis=st.text_area("Teknik analisis data",height=90,key="auto_article_analysis_v60")
+    st.markdown("### B. Hasil penelitian aktual")
+    st.caption("Masukkan ringkasan hasil yang benar-benar diperoleh. Jika data sudah ada di tab Data, aktifkan pilihan pemanfaatan data proyek. AI tidak boleh menciptakan hasil yang belum tersedia.")
+    ai_findings=st.text_area("Temuan/hasil utama, angka statistik, koefisien, p-value, tema, dan bukti (jika ada)",height=180,key="auto_article_findings_v60")
+    use_project_data=st.checkbox("Gunakan ringkasan dataset dan bukti kualitatif yang sudah tersimpan pada proyek aktif (tanpa unggah ulang)",value=True,key="auto_article_use_project_data_v60")
+    project_evidence=""
+    if use_project_data:
+        qdf=st.session_state.get("data",pd.DataFrame())
+        segdf=st.session_state.get("segments",pd.DataFrame())
+        if not qdf.empty:
+            project_evidence+="\nQUANTITATIVE ACTIVE DATASET PROFILE:\n"
+            project_evidence+=f"Rows={len(qdf)}; columns={list(map(str,qdf.columns))}\n"
+            project_evidence+=qdf.describe(include="all").transpose().head(40).to_string()
+            project_evidence+="\nMissing values:\n"+qdf.isna().sum().to_string()
+        if not segdf.empty:
+            project_evidence+="\nQUALITATIVE SEGMENTS (anonymise; maximum 25 records):\n"
+            project_evidence+=segdf.head(25).to_string(index=False)[:18000]
+        if not project_evidence:
+            st.info("Belum ada data proyek aktif. Anda tetap dapat menulis hasil secara manual pada kolom temuan.")
+        else:
+            st.success(f"Ringkasan data proyek siap digunakan: {len(qdf)} baris tabular dan {len(segdf)} unit kualitatif.")
+    st.markdown("### C. Penelusuran literatur akademik otomatis")
+    lit_query=st.text_input("Kata kunci pencarian literatur (sebaiknya bahasa Inggris)",value=ai_title,key="auto_article_litquery_v60")
+    lc1,lc2=st.columns(2)
+    with lc1: lit_year=st.number_input("Tahun publikasi mulai",2010,2026,2020,key="auto_article_lityear_v60")
+    with lc2: lit_count=st.slider("Jumlah sumber akademik",5,20,12,key="auto_article_litcount_v60")
+    if st.button("Cari literatur akademik",key="auto_article_litsearch_v60"):
+        try:
+            found=search_openalex_literature(lit_query,int(lit_count),int(lit_year))
+            st.session_state["auto_article_literature_v60"]=found
+            st.success(f"{len(found)} metadata artikel ditemukan.")
+        except Exception as e: st.error(str(e))
+    literature=st.session_state.get("auto_article_literature_v60",[])
+    if literature:
+        litdf=pd.DataFrame([{"Tahun":x["year"],"Judul":x["title"],"Jurnal":x["venue"],"Sitasi terindeks":x["cited_by"],"DOI":x["doi"]} for x in literature])
+        st.dataframe(litdf,use_container_width=True,hide_index=True)
+        st.caption("Sumber metadata: OpenAlex. Abstrak digunakan jika tersedia; sistem tidak mengklaim telah membaca full text. Jumlah sitasi bukan ukuran tunggal kualitas jurnal.")
+        st.download_button("Unduh metadata literatur CSV",litdf.to_csv(index=False).encode("utf-8-sig"),"OpenAlex_literature_metadata.csv","text/csv")
+    st.markdown("### D. Hasilkan artikel lengkap secara otomatis")
+    st.caption("Struktur otomatis: Title, Author, Abstract, Keywords, Introduction, Literature Review, Research Method, Results, Discussion, Conclusion, References (APA 7).")
+    if st.button("GENERATE FULL ARTICLE WITH AI",type="primary",key="auto_article_generate_v60"):
+        required=[ai_key,ai_title,ai_authors,ai_problem,ai_questions]
+        if not all(str(x).strip() for x in required):
+            st.error("Lengkapi API key, judul, author, masalah penelitian, dan tujuan/pertanyaan penelitian.")
+        elif not literature:
+            st.error("Lakukan pencarian literatur terlebih dahulu agar Literature Review dan referensi didasarkan pada metadata akademik.")
+        elif not ai_findings.strip() and not project_evidence.strip():
+            st.error("Masukkan hasil penelitian aktual atau gunakan data yang sudah tersimpan di proyek. AI tidak akan mengarang Results.")
+        else:
+            meta={"title":ai_title,"authors":ai_authors,"affiliation":ai_affil,"email":ai_email,
+                  "language":ai_language,"approach":ai_approach,"design":ai_design,"context":ai_context,
+                  "period":ai_period,"problem":ai_problem,"research_questions":ai_questions,"theory":ai_theory,
+                  "population_sample_informants":ai_population,"instruments_sources":ai_instruments,
+                  "data_collection_ethics":ai_procedure,"analysis_techniques":ai_analysis}
+            findings={"researcher_reported_findings":ai_findings,"active_project_data_summary":project_evidence}
+            with st.spinner("AI sedang menyintesis literatur dan menyusun artikel. Proses dapat memerlukan beberapa menit..."):
+                try:
+                    draft=generate_full_article(ai_key,ai_model,meta,findings,literature,int(ai_word_limit))
+                    st.session_state["auto_article_draft_v60"]=draft
+                    st.session_state["auto_article_literature_used_v60"]=literature
+                    st.success("Draf artikel berhasil dibuat. Periksa penanda [AUTHOR INPUT REQUIRED] dan semua sitasi.")
+                except Exception as e: st.error(f"Generasi artikel gagal: {e}")
+    if st.session_state.get("auto_article_draft_v60"):
+        st.markdown("### E. Tinjau, revisi, dan ekspor")
+        draft=st.text_area("Draf artikel lengkap (dapat diedit)",value=st.session_state["auto_article_draft_v60"],
+                           height=650,key="auto_article_draft_editor_v60")
+        st.session_state["auto_article_draft_v60"]=draft
+        st.metric("Jumlah kata draf",f"{count_words(draft):,}")
+        if st.button("Ekspor artikel AI ke Word (DOCX)",type="primary",key="auto_article_export_v60"):
+            try:
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".docx",delete=False) as tmp: outpath=tmp.name
+                build_markdown_article_docx(outpath,draft)
+                with open(outpath,"rb") as fh:
+                    st.download_button("Unduh artikel AI (DOCX)",fh.read(),"AI_Generated_International_Journal_Article.docx",
+                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                os.unlink(outpath)
+            except Exception as e: st.error(f"Ekspor gagal: {e}")
+        used=st.session_state.get("auto_article_literature_used_v60",[])
+        if used:
+            st.markdown("**Metadata referensi sumber yang dipakai**")
+            st.text("\n\n".join(apa_from_openalex(x) for x in used))
