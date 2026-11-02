@@ -33,8 +33,8 @@ import cbsem_advanced_v44 as cb44
 from input_ingestion import read_tabular, excel_sheet_names, extract_qualitative_text, extension_of
 
 st.set_page_config(page_title="Research Analyzer Professional v5.1",layout="wide")
-st.title("Research Analyzer Professional v5.0")
-st.caption("Statistical Analysis • Qualitative Intelligence • Mixed Methods • Crossref • Publication Readiness • Advanced Diagnostics")
+st.title("Research Analyzer Professional v5.2")
+st.caption("Unified Research Data Management • Single Data Entry • Quantitative • Qualitative • Mixed Methods • Publication Readiness")
 st.info("v2.7 menambahkan analisis mediasi dan moderasi berbasis skor konstruk terestimasi. Baca catatan metodologis: fitur ini merupakan analisis OLS/bootstrap eksploratif, bukan bukti kausal otomatis.")
 
 def init(k,v):
@@ -44,6 +44,10 @@ init("segments",pd.DataFrame(columns=["id","source","participant","text"]))
 init("codes",pd.DataFrame(columns=["segment_id","code","category","theme","memo","evidence_type"]))
 init("sem",pd.DataFrame())
 init("joint",[])
+init("data_sources",[])
+init("ingested_hashes",set())
+init("project_files",{})
+init("tabular_datasets",{})
 
 with st.sidebar:
     project=st.text_input("Judul penelitian","Penelitian Pendidikan Islam")
@@ -62,29 +66,98 @@ with tabs[0]:
     st.markdown("**Alur:** impor data → validasi → analisis → interpretasi → integrasi → pelaporan.")
     st.info("Gunakan data anonim. Pastikan prosedur etik dan perlindungan data dipenuhi.")
 with tabs[1]:
-    st.subheader("Impor Data Kuantitatif")
-    st.caption("Format yang didukung: Excel (.xlsx/.xls) dan CSV (.csv). Pilih lembar kerja Excel jika berkas memiliki beberapa sheet.")
-    f=st.file_uploader("Unggah data responden Excel atau CSV",type=["xlsx","xls","csv"],key="datafile")
-    if f:
-        try:
-            sheet = 0
-            if extension_of(f) in {"xlsx", "xls"}:
-                sheets = excel_sheet_names(f)
-                sheet = st.selectbox("Pilih sheet Excel", sheets, key="quant_excel_sheet")
-            loaded = read_tabular(f, sheet_name=sheet)
-            if loaded.empty:
-                st.warning("File terbaca, tetapi tidak memiliki baris data.")
-            else:
-                st.session_state.data=loaded
-                st.success(f"Berhasil memuat {len(loaded)} baris dan {len(loaded.columns)} kolom dari {f.name}.")
-        except Exception as e: st.error(f"Gagal membaca file: {e}")
+    st.subheader("Pusat Data Penelitian — Single Data Entry")
+    st.caption("Unggah seluruh sumber data penelitian dari satu tempat. Sistem akan mengelompokkan data numerik dan dokumen naratif, lalu membagikannya ke modul analisis yang sesuai.")
+    uploaded_files=st.file_uploader(
+        "Unggah seluruh file penelitian sekaligus",
+        type=["xlsx","xls","csv","docx","pdf","txt","md"],
+        accept_multiple_files=True,
+        key="central_research_upload"
+    )
+    if uploaded_files:
+        for uploaded in uploaded_files:
+            raw_bytes=uploaded.getvalue()
+            signature=hashlib.sha256(uploaded.name.encode("utf-8")+raw_bytes).hexdigest()
+            if signature in st.session_state.ingested_hashes:
+                continue
+            ext=extension_of(uploaded)
+            try:
+                if ext in {"xlsx","xls","csv"}:
+                    if ext in {"xlsx","xls"}:
+                        sheets=excel_sheet_names(uploaded)
+                        frame=read_tabular(uploaded,sheet_name=sheets[0])
+                        source_detail=f"Sheet: {sheets[0]}"
+                    else:
+                        frame=read_tabular(uploaded)
+                        source_detail="CSV"
+                    if frame.empty:
+                        raise ValueError("File tabular tidak memiliki baris data.")
+                    text_candidates=[c for c in frame.columns if str(c).strip().lower() in
+                        {"text","teks","transcript","transkrip","kutipan","isi","content","narasi"}]
+                    numeric_count=len(frame.select_dtypes(include=np.number).columns)
+                    if text_candidates and numeric_count==0:
+                        text_col=text_candidates[0]
+                        for c,default in [("source",uploaded.name),("participant","NA")]:
+                            if c not in frame.columns: frame[c]=default
+                        q=frame.rename(columns={text_col:"text"})[["source","participant","text"]].dropna(subset=["text"]).copy()
+                        q.insert(0,"id",[f"Q{len(st.session_state.segments)+i+1:04d}" for i in range(len(q))])
+                        st.session_state.segments=pd.concat([st.session_state.segments,q],ignore_index=True)
+                        category="Data kualitatif tabular"
+                    else:
+                        dataset_name=uploaded.name
+                        if dataset_name in st.session_state.tabular_datasets:
+                            dataset_name=f"{uploaded.name} ({len(st.session_state.tabular_datasets)+1})"
+                        st.session_state.tabular_datasets[dataset_name]=frame.copy()
+                        category="Data kuantitatif/tabular"
+                    st.session_state.data_sources.append({"file":uploaded.name,"format":ext.upper(),
+                        "category":category,"rows":len(frame),"columns":len(frame.columns),"detail":source_detail})
+                elif ext in {"docx","pdf","txt","md"}:
+                    extracted=extract_qualitative_text(uploaded)
+                    raw=pd.DataFrame(extracted)
+                    if raw.empty:
+                        raise ValueError("Tidak ada teks yang dapat diekstrak. PDF hasil pemindaian gambar memerlukan OCR.")
+                    raw=raw.rename(columns={"location":"participant"})
+                    raw.insert(0,"id",[f"Q{len(st.session_state.segments)+i+1:04d}" for i in range(len(raw))])
+                    raw["source"]=raw.get("source",uploaded.name)
+                    st.session_state.segments=pd.concat(
+                        [st.session_state.segments,raw[["id","source","participant","text"]]],ignore_index=True)
+                    st.session_state.data_sources.append({"file":uploaded.name,"format":ext.upper(),
+                        "category":"Dokumen kualitatif","rows":len(raw),"columns":1,"detail":"Teks diekstrak"})
+                st.session_state.ingested_hashes.add(signature)
+                st.success(f"Berhasil mengimpor: {uploaded.name}")
+            except Exception as e:
+                st.error(f"Gagal mengimpor {uploaded.name}: {e}")
+    st.divider()
+    st.markdown("**Ringkasan repositori data proyek**")
+    if st.session_state.data_sources:
+        st.dataframe(pd.DataFrame(st.session_state.data_sources),use_container_width=True,hide_index=True)
+        if st.button("Kosongkan repositori proyek",key="clear_project_repository"):
+            st.session_state.data=pd.DataFrame()
+            st.session_state.tabular_datasets={}
+            st.session_state.segments=pd.DataFrame(columns=["id","source","participant","text"])
+            st.session_state.codes=pd.DataFrame(columns=["segment_id","code","category","theme","memo","evidence_type"])
+            st.session_state.data_sources=[]
+            st.session_state.ingested_hashes=set()
+            st.rerun()
+    else:
+        st.info("Belum ada sumber data. Pilih satu atau beberapa file di atas.")
+    if st.session_state.tabular_datasets:
+        dataset_names=list(st.session_state.tabular_datasets.keys())
+        active_name=st.selectbox("Pilih dataset tabular untuk seluruh modul kuantitatif/SEM",dataset_names,key="active_project_dataset")
+        st.session_state.data=st.session_state.tabular_datasets[active_name].copy()
     df=st.session_state.data
     if not df.empty:
+        st.markdown("**Pratinjau data tabular aktif**")
         st.dataframe(df.head(100),use_container_width=True)
         profile=pd.DataFrame({"tipe":df.dtypes.astype(str),"missing":df.isna().sum(),
                               "missing_%":(df.isna().mean()*100).round(2),"unik":df.nunique()})
+        st.markdown("**Profil kualitas data**")
         st.dataframe(profile,use_container_width=True)
         st.download_button("Unduh profil data",profile.to_csv().encode("utf-8-sig"),"data_profile.csv")
+    st.markdown("**Pratinjau unit data kualitatif**")
+    st.metric("Jumlah unit teks",len(st.session_state.segments))
+    if not st.session_state.segments.empty:
+        st.dataframe(st.session_state.segments.head(50),use_container_width=True)
 with tabs[2]:
     df=st.session_state.data
     if df.empty: st.info("Impor data pada tab Data.")
@@ -149,42 +222,13 @@ with tabs[4]:
             except Exception as e: st.error(str(e))
         st.caption("Regresi OLS menguji asosiasi/prediksi dalam spesifikasi model; tidak otomatis membuktikan kausalitas. Periksa asumsi dan rancangan penelitian.")
 with tabs[5]:
-    st.subheader("Impor Data Kualitatif")
-    st.caption("Unggah transkrip dalam Word/PDF. CSV dan Excel juga dapat digunakan jika memiliki kolom text atau teks.")
-    f=st.file_uploader("Unggah transkrip atau dokumen penelitian",type=["docx","pdf","csv","xlsx","xls","txt","md"],key="transcripts")
-    if f:
-        try:
-            ext=extension_of(f)
-            if ext in {"docx","pdf","txt","md"}:
-                extracted=extract_qualitative_text(f)
-                raw=pd.DataFrame(extracted)
-                if raw.empty:
-                    st.warning("Tidak ada teks yang dapat diekstrak. Jika PDF berupa hasil pemindaian gambar, lakukan OCR terlebih dahulu.")
-                else:
-                    raw=raw.rename(columns={"location":"participant"})
-                    raw.insert(0,"id",[f"Q{i+1:04d}" for i in range(len(raw))])
-                    st.session_state.segments=raw[["id","source","participant","text"]]
-                    st.success(f"Berhasil mengekstrak {len(raw)} unit teks dari {f.name}.")
-            else:
-                if ext in {"xlsx","xls"}:
-                    sheets=excel_sheet_names(f)
-                    selected_sheet=st.selectbox("Pilih sheet transkrip",sheets,key="qual_excel_sheet")
-                    raw=read_tabular(f,selected_sheet)
-                else:
-                    raw=read_tabular(f)
-                text_col=next((c for c in raw.columns if str(c).strip().lower() in {"text","teks","transcript","transkrip","kutipan","isi"}),None)
-                if text_col is None: st.error("Kolom teks wajib: gunakan nama text, teks, transcript, transkrip, kutipan, atau isi.")
-                else:
-                    for c,default in [("source","Impor"),("participant","NA")]:
-                        if c not in raw: raw[c]=default
-                    raw=raw.rename(columns={text_col:"text"})
-                    raw=raw[["source","participant","text"]].dropna(subset=["text"]).copy()
-                    raw.insert(0,"id",[f"Q{i+1:04d}" for i in range(len(raw))])
-                    st.session_state.segments=raw
-                    st.success(f"Berhasil memuat {len(raw)} unit teks dari {f.name}.")
-        except Exception as e: st.error(f"Gagal membaca dokumen: {e}")
+    st.subheader("Analisis Data Kualitatif")
+    st.caption("Modul ini menggunakan dokumen dan teks yang sudah diimpor melalui Pusat Data Penelitian. Tidak perlu mengunggah ulang.")
     seg=st.session_state.segments
-    if not seg.empty:
+    if seg.empty:
+        st.info("Belum ada data kualitatif. Unggah Word, PDF, atau file teks melalui tab Data.")
+    else:
+        st.metric("Unit teks tersedia",len(seg))
         sid=st.selectbox("Unit data",seg.id.tolist())
         st.write(seg.loc[seg.id==sid,"text"].iloc[0])
         code=st.text_input("Kode"); cat=st.text_input("Kategori"); theme=st.text_input("Tema sementara")
