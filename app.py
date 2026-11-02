@@ -30,8 +30,9 @@ import research_diagnostics_v41 as rd41
 import sem_inference_v42 as si42
 import cfa_cbsem_v43 as cfa43
 import cbsem_advanced_v44 as cb44
+from input_ingestion import read_tabular, excel_sheet_names, extract_qualitative_text, extension_of
 
-st.set_page_config(page_title="Research Analyzer Professional v5.0",layout="wide")
+st.set_page_config(page_title="Research Analyzer Professional v5.1",layout="wide")
 st.title("Research Analyzer Professional v5.0")
 st.caption("Statistical Analysis • Qualitative Intelligence • Mixed Methods • Crossref • Publication Readiness • Advanced Diagnostics")
 st.info("v2.7 menambahkan analisis mediasi dan moderasi berbasis skor konstruk terestimasi. Baca catatan metodologis: fitur ini merupakan analisis OLS/bootstrap eksploratif, bukan bukti kausal otomatis.")
@@ -61,12 +62,22 @@ with tabs[0]:
     st.markdown("**Alur:** impor data → validasi → analisis → interpretasi → integrasi → pelaporan.")
     st.info("Gunakan data anonim. Pastikan prosedur etik dan perlindungan data dipenuhi.")
 with tabs[1]:
-    f=st.file_uploader("Unggah data responden CSV",type="csv",key="datafile")
+    st.subheader("Impor Data Kuantitatif")
+    st.caption("Format yang didukung: Excel (.xlsx/.xls) dan CSV (.csv). Pilih lembar kerja Excel jika berkas memiliki beberapa sheet.")
+    f=st.file_uploader("Unggah data responden Excel atau CSV",type=["xlsx","xls","csv"],key="datafile")
     if f:
         try:
-            st.session_state.data=pd.read_csv(f)
-            st.success(f"Berhasil memuat {len(st.session_state.data)} baris.")
-        except Exception as e: st.error(str(e))
+            sheet = 0
+            if extension_of(f) in {"xlsx", "xls"}:
+                sheets = excel_sheet_names(f)
+                sheet = st.selectbox("Pilih sheet Excel", sheets, key="quant_excel_sheet")
+            loaded = read_tabular(f, sheet_name=sheet)
+            if loaded.empty:
+                st.warning("File terbaca, tetapi tidak memiliki baris data.")
+            else:
+                st.session_state.data=loaded
+                st.success(f"Berhasil memuat {len(loaded)} baris dan {len(loaded.columns)} kolom dari {f.name}.")
+        except Exception as e: st.error(f"Gagal membaca file: {e}")
     df=st.session_state.data
     if not df.empty:
         st.dataframe(df.head(100),use_container_width=True)
@@ -138,16 +149,40 @@ with tabs[4]:
             except Exception as e: st.error(str(e))
         st.caption("Regresi OLS menguji asosiasi/prediksi dalam spesifikasi model; tidak otomatis membuktikan kausalitas. Periksa asumsi dan rancangan penelitian.")
 with tabs[5]:
-    f=st.file_uploader("CSV transkrip (kolom text wajib)",type="csv",key="transcripts")
+    st.subheader("Impor Data Kualitatif")
+    st.caption("Unggah transkrip dalam Word/PDF. CSV dan Excel juga dapat digunakan jika memiliki kolom text atau teks.")
+    f=st.file_uploader("Unggah transkrip atau dokumen penelitian",type=["docx","pdf","csv","xlsx","xls","txt","md"],key="transcripts")
     if f:
-        raw=pd.read_csv(f)
-        if "text" not in raw: st.error("Kolom text wajib.")
-        else:
-            for c,default in [("source","Impor"),("participant","NA")]:
-                if c not in raw: raw[c]=default
-            raw=raw[["source","participant","text"]].dropna(subset=["text"]).copy()
-            raw.insert(0,"id",[f"Q{i+1:04d}" for i in range(len(raw))])
-            st.session_state.segments=raw
+        try:
+            ext=extension_of(f)
+            if ext in {"docx","pdf","txt","md"}:
+                extracted=extract_qualitative_text(f)
+                raw=pd.DataFrame(extracted)
+                if raw.empty:
+                    st.warning("Tidak ada teks yang dapat diekstrak. Jika PDF berupa hasil pemindaian gambar, lakukan OCR terlebih dahulu.")
+                else:
+                    raw=raw.rename(columns={"location":"participant"})
+                    raw.insert(0,"id",[f"Q{i+1:04d}" for i in range(len(raw))])
+                    st.session_state.segments=raw[["id","source","participant","text"]]
+                    st.success(f"Berhasil mengekstrak {len(raw)} unit teks dari {f.name}.")
+            else:
+                if ext in {"xlsx","xls"}:
+                    sheets=excel_sheet_names(f)
+                    selected_sheet=st.selectbox("Pilih sheet transkrip",sheets,key="qual_excel_sheet")
+                    raw=read_tabular(f,selected_sheet)
+                else:
+                    raw=read_tabular(f)
+                text_col=next((c for c in raw.columns if str(c).strip().lower() in {"text","teks","transcript","transkrip","kutipan","isi"}),None)
+                if text_col is None: st.error("Kolom teks wajib: gunakan nama text, teks, transcript, transkrip, kutipan, atau isi.")
+                else:
+                    for c,default in [("source","Impor"),("participant","NA")]:
+                        if c not in raw: raw[c]=default
+                    raw=raw.rename(columns={text_col:"text"})
+                    raw=raw[["source","participant","text"]].dropna(subset=["text"]).copy()
+                    raw.insert(0,"id",[f"Q{i+1:04d}" for i in range(len(raw))])
+                    st.session_state.segments=raw
+                    st.success(f"Berhasil memuat {len(raw)} unit teks dari {f.name}.")
+        except Exception as e: st.error(f"Gagal membaca dokumen: {e}")
     seg=st.session_state.segments
     if not seg.empty:
         sid=st.selectbox("Unit data",seg.id.tolist())
@@ -298,7 +333,7 @@ with tabs[7]:
         for _,r in st.session_state.sem.iterrows():
             st.write(f"{r['path']}: β={r['beta']:.3f}; p={r['p_value']:.4f}; {'signifikan' if r['p_value']<alpha else 'belum signifikan'} pada α={alpha:.3f}.")
 with tabs[8]:
-    with st.form("joint"):
+    with st.form("joint_form_v51"):
         q=st.text_input("Temuan kuantitatif"); stat=st.text_input("Statistik")
         theme=st.text_input("Tema kualitatif"); evidence=st.text_area("Bukti/kutipan")
         relation=st.selectbox("Relasi",["Konvergen","Komplementer","Divergen","Ekspansi","Belum ditentukan"])
