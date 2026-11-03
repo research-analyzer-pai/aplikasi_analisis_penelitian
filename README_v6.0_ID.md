@@ -29,7 +29,7 @@ DATABASE_URL = "postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require"
 Aplikasi akan memakai PostgreSQL secara otomatis jika `DATABASE_URL` tersedia. Jangan masukkan kredensial database ke GitHub atau file kode. Gunakan menu Secrets di pengaturan aplikasi Streamlit.
 
 ## Batasan penting
-- Jika `DATABASE_URL` tidak dikonfigurasi, aplikasi memakai SQLite lokal. Pada layanan cloud yang filesystem-nya ephemeral, data dapat hilang saat instance diganti/restart. Untuk persistensi cloud, PostgreSQL wajib dikonfigurasi.
+- Jika `DATABASE_URL` tidak dikonfigurasi, aplikasi memakai SQLite sebagai fallback untuk pengembangan lokal. Di Streamlit Cloud, SQLite tidak dijamin bertahan setelah restart/redeploy. Untuk persistensi cloud, PostgreSQL wajib dikonfigurasi. Aplikasi menampilkan panduan koneksi di sidebar dan memeriksa koneksi database saat startup.
 - Sistem menyimpan hasil ekstraksi/representasi data yang telah diparsing; file unggahan asli tidak disimpan sebagai arsip biner.
 - PDF hasil scan/gambar membutuhkan OCR dan belum didukung pada versi ini.
 - Dataset tabular yang berbeda tidak digabung otomatis. Peneliti memilih dataset aktif untuk analisis kuantitatif.
