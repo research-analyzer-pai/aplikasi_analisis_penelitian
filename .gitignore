@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-.env
 .streamlit/secrets.toml
-.DS_Store
+.env
+*.db
+data_private/
